@@ -10,7 +10,7 @@ vectorizer = joblib.load("tfidf_vectorizer.pkl")
 
 # Streamlit config
 st.set_page_config(page_title="Fake News Detection", page_icon="📰")
-st.title("📰 Fake News Detection (Naive Bayes & Hybrid NB→DT)")
+st.title("📰 Fake News Detection ")
 
 # User input
 user_input = st.text_area("Enter a news article to check:")
