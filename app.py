@@ -1,91 +1,98 @@
 import streamlit as st
-import pickle
+import joblib
 import json
 import os
 import numpy as np
 import matplotlib.pyplot as plt
 
 # ---------------------------
-# 1️⃣ Load the trained model and vectorizer
+# 1️⃣ Load Models & Vectorizer
 # ---------------------------
-with open("model.pkl", "rb") as f:
-    model = pickle.load(f)
-
-with open("vectorizer.pkl", "rb") as f:
-    vectorizer = pickle.load(f)
-
-# ---------------------------
-# 2️⃣ Functions to save/load persistent counts
-# ---------------------------
-def load_counts():
-    """Load stored counts from counts.json if it exists."""
-    if os.path.exists("counts.json"):
-        with open("counts.json", "r") as f:
-            return json.load(f)
-    else:
-        return {"True News": 0, "Fake News": 0}
-
-def save_counts(counts):
-    """Save updated counts to counts.json."""
-    with open("counts.json", "w") as f:
-        json.dump(counts, f)
-
-# Load existing counts
-counts = load_counts()
-
-# ---------------------------
-# 3️⃣ Streamlit UI
-# ---------------------------
-st.set_page_config(page_title="Fake News Detector", page_icon="📰", layout="centered")
-
 st.title("📰 Fake News Detection App")
-st.markdown("Enter a news headline or paragraph below to check whether it's **True** or **Fake**.")
+st.caption("Using Naive Bayes and Hybrid NB→DT Models")
 
-user_input = st.text_area("🗞️ Enter News Text", height=150)
+try:
+    nb_model = joblib.load("naive_bayes.pkl")
+    hybrid_model = joblib.load("hybrid_dt.pkl")
+    vectorizer = joblib.load("tfidf_vectorizer.pkl")
+    st.success("✅ Models and Vectorizer loaded successfully!")
+except FileNotFoundError as e:
+    st.error(f"❌ Missing file: {e.filename}. Please make sure all .pkl files are in the repo.")
+    st.stop()
 
-if st.button("Predict"):
-    if user_input.strip() == "":
-        st.warning("⚠️ Please enter some text.")
+# ---------------------------
+# 2️⃣ Initialize Count Storage
+# ---------------------------
+count_file = "count.json"
+
+# If file doesn't exist, create it
+if not os.path.exists(count_file):
+    with open(count_file, "w") as f:
+        json.dump({"Real": 0, "Fake": 0}, f)
+
+# Load the counts
+with open(count_file, "r") as f:
+    counts = json.load(f)
+
+# ---------------------------
+# 3️⃣ News Input Section
+# ---------------------------
+st.subheader("🧾 Enter News Article Text")
+news_input = st.text_area("Paste or type the news content below:")
+
+if st.button("🔍 Classify News"):
+    if news_input.strip() == "":
+        st.warning("⚠️ Please enter some text before classifying.")
     else:
-        # Convert input text to TF-IDF
-        input_tfidf = vectorizer.transform([user_input])
-        prediction = model.predict(input_tfidf)[0]
-        prob = np.max(model.predict_proba(input_tfidf))
+        # Transform input text
+        X_input = vectorizer.transform([news_input])
 
-        if prediction == 1:
-            st.success(f"✅ **True News** — Confidence: {prob:.2f}")
-            counts["True News"] += 1
+        # Predictions
+        nb_pred = nb_model.predict(X_input)[0]
+        nb_prob = nb_model.predict_proba(X_input)[0][1]
+
+        nb_test_probs = nb_model.predict_proba(X_input)
+        hybrid_pred = hybrid_model.predict(nb_test_probs)[0]
+        hybrid_prob = hybrid_model.predict_proba(nb_test_probs)[0][1]
+
+        # Display Results
+        st.markdown("---")
+        st.subheader("📊 Prediction Results")
+
+        # Naive Bayes Result
+        if nb_pred == 1:
+            st.success(f"🧮 Naive Bayes Prediction\n✅ Real News (Confidence: {nb_prob:.2f})")
         else:
-            st.error(f"🚨 **Fake News** — Confidence: {prob:.2f}")
-            counts["Fake News"] += 1
+            st.error(f"🧮 Naive Bayes Prediction\n🚨 Fake News (Confidence: {nb_prob:.2f})")
 
-        # Save updated counts
-        save_counts(counts)
+        # Hybrid Result
+        if hybrid_pred == 1:
+            st.success(f"🌟 Hybrid NB→DT Prediction\n✅ Real News (Confidence: {hybrid_prob:.2f})")
+            counts["Real"] += 1
+        else:
+            st.error(f"🌟 Hybrid NB→DT Prediction\n🚨 Fake News (Confidence: {hybrid_prob:.2f})")
+            counts["Fake"] += 1
+
+        # Update counts file
+        with open(count_file, "w") as f:
+            json.dump(counts, f, indent=4)
 
 # ---------------------------
-# 4️⃣ Show persistent pie chart of total predictions
+# 4️⃣ Show Summary Pie Chart
 # ---------------------------
-st.subheader("📊 Overall Prediction Summary")
+st.markdown("---")
+st.subheader("📈 Prediction Summary")
 
-total_predictions = counts["True News"] + counts["Fake News"]
+labels = list(counts.keys())
+sizes = list(counts.values())
 
-if total_predictions == 0:
-    st.info("No predictions yet! Start testing your news to see results here.")
-else:
-    labels = list(counts.keys())
-    sizes = list(counts.values())
-    colors = ["#4CAF50", "#F44336"]  # green for true, red for fake
+fig, ax = plt.subplots()
+ax.pie(sizes, labels=labels, autopct="%1.1f%%", startangle=90, colors=["#4CAF50", "#F44336"])
+ax.axis("equal")
+st.pyplot(fig)
 
-    fig, ax = plt.subplots()
-    ax.pie(
-        sizes,
-        labels=labels,
-        autopct="%1.1f%%",
-        startangle=90,
-        colors=colors,
-        textprops={"fontsize": 12},
-    )
-    ax.axis("equal")
-    st.pyplot(fig)
-
-    st.write(f"🟢 **True News:** {counts['True News']}  |  🔴 **Fake News:** {counts['Fake News']}")
+# ---------------------------
+# Footer
+# ---------------------------
+st.markdown("---")
+st.caption("Developed with ❤️ using Streamlit | Naive Bayes + Hybrid Decision Tree")
